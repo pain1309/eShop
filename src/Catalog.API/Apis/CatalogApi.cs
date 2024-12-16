@@ -33,7 +33,14 @@ public static class CatalogApi
         return app;
     }
 
-    public static async Task<Results<Ok<PaginatedItems<CatalogItem>>, BadRequest<string>>> GetAllItems(
+        // Phương thức GetAllItems nhận vào 2 tham số:
+        // - paginationRequest: Chứa thông tin về phân trang (page size, page index)
+        // - services: Chứa các dependency cần thiết như CatalogContext, CatalogAI, EventService
+        // Việc truyền services như một tham số giúp:
+        // 1. Dependency Injection: Các service được inject vào một cách tự động và quản lý bởi DI container
+        // 2. Tách biệt các dependency: Giúp code dễ test và maintain hơn
+        // 3. Tái sử dụng: Các service có thể được dùng chung cho nhiều API endpoint khác nhau
+        public static async Task<Results<Ok<PaginatedItems<CatalogItem>>, BadRequest<string>>> GetAllItems(
         [AsParameters] PaginationRequest paginationRequest,
         [AsParameters] CatalogServices services)
     {

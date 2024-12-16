@@ -30,6 +30,7 @@ public sealed class RabbitMQEventBus(
 
     public Task PublishAsync(IntegrationEvent @event)
     {
+        // Lấy tên của event làm routing key để định tuyến message
         var routingKey = @event.GetType().Name;
 
         if (logger.IsEnabled(LogLevel.Trace))
@@ -37,6 +38,7 @@ public sealed class RabbitMQEventBus(
             logger.LogTrace("Creating RabbitMQ channel to publish event: {EventId} ({EventName})", @event.Id, routingKey);
         }
 
+        // Tạo channel để gửi message
         using var channel = _rabbitMQConnection?.CreateModel() ?? throw new InvalidOperationException("RabbitMQ connection is not open");
 
         if (logger.IsEnabled(LogLevel.Trace))
@@ -44,21 +46,22 @@ public sealed class RabbitMQEventBus(
             logger.LogTrace("Declaring RabbitMQ exchange to publish event: {EventId}", @event.Id);
         }
 
+        // Khai báo exchange kiểu direct
         channel.ExchangeDeclare(exchange: ExchangeName, type: "direct");
 
+        // Chuyển event thành binary để gửi
         var body = SerializeMessage(@event);
 
-        // Start an activity with a name following the semantic convention of the OpenTelemetry messaging specification.
-        // https://github.com/open-telemetry/semantic-conventions/blob/main/docs/messaging/messaging-spans.md
+        // Tạo activity name theo chuẩn OpenTelemetry messaging specification
         var activityName = $"{routingKey} publish";
 
+        // Thực thi việc publish message với retry policy
         return _pipeline.Execute(() =>
         {
+            // Bắt đầu activity để tracking
             using var activity = _activitySource.StartActivity(activityName, ActivityKind.Client);
 
-            // Depending on Sampling (and whether a listener is registered or not), the activity above may not be created.
-            // If it is created, then propagate its context. If it is not created, the propagate the Current context, if any.
-
+            // Lấy context để truyền vào message header
             ActivityContext contextToInject = default;
 
             if (activity != null)
@@ -70,18 +73,22 @@ public sealed class RabbitMQEventBus(
                 contextToInject = Activity.Current.Context;
             }
 
+            // Tạo message properties
             var properties = channel.CreateBasicProperties();
-            // persistent
+            // Đặt chế độ persistent để message không bị mất khi RabbitMQ restart
             properties.DeliveryMode = 2;
 
+            // Hàm helper để inject trace context vào message header
             static void InjectTraceContextIntoBasicProperties(IBasicProperties props, string key, string value)
             {
                 props.Headers ??= new Dictionary<string, object>();
                 props.Headers[key] = value;
             }
 
+            // Inject trace context vào message header
             _propagator.Inject(new PropagationContext(contextToInject, Baggage.Current), properties, InjectTraceContextIntoBasicProperties);
 
+            // Set các thông tin tracking cho activity
             SetActivityContext(activity, routingKey, "publish");
 
             if (logger.IsEnabled(LogLevel.Trace))
@@ -91,6 +98,7 @@ public sealed class RabbitMQEventBus(
 
             try
             {
+                // Publish message lên RabbitMQ
                 channel.BasicPublish(
                     exchange: ExchangeName,
                     routingKey: routingKey,
@@ -102,6 +110,7 @@ public sealed class RabbitMQEventBus(
             }
             catch (Exception ex)
             {
+                // Ghi nhận exception vào activity nếu có lỗi
                 activity.SetExceptionTags(ex);
 
                 throw;

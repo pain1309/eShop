@@ -7,10 +7,31 @@ internal static class MigrateDbContextExtensions
     private static readonly string ActivitySourceName = "DbMigrations";
     private static readonly ActivitySource ActivitySource = new(ActivitySourceName);
 
+    // IServiceCollection là interface chính để đăng ký các service vào DI container
+    // Phương thức mở rộng này cho phép:
+    // 1. Thêm migration service vào DI container một cách fluent
+    // 2. Đăng ký các dependency cần thiết cho việc migration
+    // 3. Tích hợp với hệ thống dependency injection có sẵn của ứng dụng
     public static IServiceCollection AddMigration<TContext>(this IServiceCollection services)
         where TContext : DbContext
+        // Đây là phương thức overload đơn giản nhất của AddMigration
+        // Nó chuyển tiếp (delegate) sang phiên bản đầy đủ hơn của AddMigration bằng cách:
+        // 1. Truyền vào một lambda expression (_, _) => Task.CompletedTask làm seeder
+        // 2. Dấu gạch dưới (_) biểu thị tham số không được sử dụng (TContext và IServiceProvider)
+        // 3. Task.CompletedTask được dùng làm seeder rỗng vì không cần thực hiện seeding
+        // => Đây là cách viết ngắn gọn khi chỉ cần migrate mà không cần seed dữ liệu
         => services.AddMigration<TContext>((_, _) => Task.CompletedTask);
 
+    // Phương thức mở rộng này cho phép đăng ký migration service với một seeder tùy chỉnh
+    // Tham số:
+    // - services: IServiceCollection để đăng ký các service
+    // - seeder: Hàm delegate để thực hiện seeding dữ liệu sau khi migrate
+    // Mục đích:
+    // 1. Cấu hình OpenTelemetry để theo dõi quá trình migration thông qua ActivitySource
+    // 2. Đăng ký MigrationHostedService như một hosted service để:
+    //    - Tự động thực hiện migration khi ứng dụng khởi động
+    //    - Chạy seeder được cung cấp sau khi migration hoàn tất
+    //    - Đảm bảo database được cập nhật trước khi ứng dụng xử lý requests
     public static IServiceCollection AddMigration<TContext>(this IServiceCollection services, Func<TContext, IServiceProvider, Task> seeder)
         where TContext : DbContext
     {
@@ -40,7 +61,11 @@ internal static class MigrateDbContextExtensions
         try
         {
             logger.LogInformation("Migrating database associated with context {DbContextName}", typeof(TContext).Name);
-
+            // Tạo execution strategy để xử lý các lỗi tạm thời khi thao tác với database
+            // Strategy này sẽ:
+            // 1. Tự động retry khi gặp lỗi kết nối tạm thời
+            // 2. Áp dụng exponential backoff giữa các lần retry
+            // 3. Đảm bảo tính nhất quán khi thực hiện transaction
             var strategy = context.Database.CreateExecutionStrategy();
 
             await strategy.ExecuteAsync(() => InvokeSeeder(seeder, context, scopeServices));
@@ -87,6 +112,13 @@ internal static class MigrateDbContextExtensions
         }
     }
 }
+// Từ khóa 'in' đánh dấu tham số kiểu TContext là contravariant (đối biến), có ý nghĩa:
+// 1. Cho phép truyền vào interface một kiểu TContext hoặc kiểu cơ sở của nó
+// 2. TContext chỉ có thể được sử dụng làm tham số đầu vào của phương thức
+// 3. Ví dụ: nếu có class MyDbContext : DbContext, thì:
+//    - IDbSeeder<DbContext> seeder = new MySeeder(); // Hợp lệ  
+//    - IDbSeeder<MyDbContext> seeder = new DbSeeder(); // Không hợp lệ
+// 4. Điều này giúp code linh hoạt hơn nhưng vẫn đảm bảo type safety
 public interface IDbSeeder<in TContext> where TContext : DbContext
 {
     Task SeedAsync(TContext context);

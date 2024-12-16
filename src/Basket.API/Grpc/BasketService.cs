@@ -4,10 +4,23 @@ using eShop.Basket.API.Extensions;
 using eShop.Basket.API.Model;
 
 namespace eShop.Basket.API.Grpc;
-
+// Đây là cách viết DI (Dependency Injection) sử dụng primary constructor trong C# 12
+// Tương đương với cách viết truyền thống:
+// public class BasketService : Basket.BasketBase
+// {
+//     private readonly IBasketRepository _repository;
+//     private readonly ILogger<BasketService> _logger;
+//
+//     public BasketService(IBasketRepository repository, ILogger<BasketService> logger)
+//     {
+//         _repository = repository;
+//         _logger = logger;
+//     }
+// }
 public class BasketService(
-    IBasketRepository repository,
-    ILogger<BasketService> logger) : Basket.BasketBase
+    IBasketRepository repository,    // Inject IBasketRepository để thao tác với basket data
+    ILogger<BasketService> logger)   // Inject ILogger để ghi log
+    : Basket.BasketBase             // Kế thừa từ lớp base được tạo bởi gRPC
 {
     [AllowAnonymous]
     public override async Task<CustomerBasketResponse> GetBasket(GetBasketRequest request, ServerCallContext context)
@@ -41,6 +54,9 @@ public class BasketService(
             ThrowNotAuthenticated();
         }
 
+        // Kiểm tra xem log level Debug có được bật không trước khi ghi log
+        // Đây là best practice để tránh tạo message log không cần thiết
+        // khi log level Debug bị tắt
         if (logger.IsEnabled(LogLevel.Debug))
         {
             logger.LogDebug("Begin UpdateBasket call from method {Method} for basket id {Id}", context.Method, userId);

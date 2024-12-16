@@ -33,8 +33,20 @@ public sealed class CatalogIntegrationEventService(ILogger<CatalogIntegrationEve
         //See: https://docs.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency            
         await ResilientTransaction.New(catalogContext).ExecuteAsync(async () =>
         {
-            // Achieving atomicity between original catalog database operation and the IntegrationEventLog thanks to a local transaction
+            // Sử dụng ResilientTransaction để thực hiện các thao tác database một cách đáng tin cậy
+            // bằng cách tự động retry khi có lỗi tạm thời xảy ra
+            
+            // Thực hiện 2 thao tác trong cùng một transaction để đảm bảo tính nguyên tử:
+            // 1. Lưu các thay đổi trong catalogContext vào database
             await catalogContext.SaveChangesAsync();
+            
+            // 2. Lưu event vào bảng IntegrationEventLog để:
+            // - Đảm bảo event được lưu lại để có thể retry khi gửi thất bại
+            // - Tránh mất event khi hệ thống gặp sự cố
+            // - Sử dụng chung transaction với catalogContext.SaveChanges() 
+            //   để đảm bảo tính nhất quán của dữ liệu:
+            //   + Nếu lưu event thất bại -> rollback luôn việc SaveChanges
+            //   + Nếu SaveChanges thất bại -> không lưu event
             await integrationEventLogService.SaveEventAsync(evt, catalogContext.Database.CurrentTransaction);
         });
     }
