@@ -28,6 +28,10 @@ public static class AuthenticationExtensions
         }
 
         // prevent from mapping "sub" claim to nameidentifier.
+        // Trong JWT, claim "sub" thường được sử dụng để đại diện cho "subject" của token, tức là người dùng hoặc thực thể mà token đó đại diện.
+        // Mặc định, một số thư viện xác thực có thể ánh xạ claim này thành "nameidentifier",
+        // điều này có thể không mong muốn trong một số trường hợp, đặc biệt là khi bạn muốn giữ nguyên giá trị của claim "sub" cho các mục đích khác.
+        // Việc loại bỏ ánh xạ này giúp bạn kiểm soát tốt hơn cách mà các claim được xử lý và sử dụng trong ứng dụng của bạn.
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Remove("sub");
 
         services.AddAuthentication().AddJwtBearer(options =>

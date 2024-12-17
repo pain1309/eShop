@@ -67,6 +67,8 @@ public sealed class CatalogIntegrationEventService(ILogger<CatalogIntegrationEve
     public void Dispose()
     {
         Dispose(disposing: true);
+        // thông báo cho trình thu gom rác rằng không cần gọi phương thức hủy (finalizer) cho đối tượng này nữa. 
+        // Điều này giúp cải thiện hiệu suất bằng cách ngăn chặn việc gọi phương thức hủy không cần thiết, vì tài nguyên đã được giải phóng một cách rõ ràng thông qua phương thức Dispose.
         GC.SuppressFinalize(this);
     }
 }
